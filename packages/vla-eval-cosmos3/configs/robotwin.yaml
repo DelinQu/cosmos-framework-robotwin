@@ -1,0 +1,61 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: OpenMDW-1.1
+#
+# Cosmos3-Nano action policy — RoboTwin 2.0 (dual-arm ALOHA, 14-D absolute joint_pos).
+#
+# Launch (in cosmos-framework's venv, with vla-eval + this package importable):
+#   .venv/bin/python -m vla_eval_cosmos3 \
+#       --config packages/vla-eval-cosmos3/configs/robotwin.yaml --port 8000
+#
+# Self-contained (no `extends:`). Bind port defaults to 8000 (override --port).
+# Override any field on the CLI with --args.<key>=<value>, e.g.
+#   --args.checkpoint_path=/ckpt/policy
+args:
+  # --- weights: local paths (bind-mount them into the container) --------------
+  # In examples/robotwin/eval/run_eval.sh these are the container-side mounts of
+  # $CHECKPOINT_PATH and $WAN_VAE_PATH.
+  checkpoint_path: /ckpt/policy
+  vae_path: /ckpt/vae.pth
+
+  # --- RoboTwin recipe (must match training) ---------------------------------
+  experiment: action_policy_robotwin_nano
+  domain_name: robotwin                          # -> domain id 17
+  # MUST MATCH TRAINING (action_policy_robotwin_nano):
+  #   use_state=True                -> current 14-D joint state is action row 0
+  #   action_normalization=quantile -> q01/q99 stats, applied to the state row too
+  # A mismatch silently mangles the motion rather than erroring.
+  use_state: true
+  # Relative to the framework root — run_eval.sh cds there before launching the
+  # server, so this resolves against whichever copy of the repo is live.
+  action_stats_path: cosmos_framework/data/generator/action/normalizer_stats/robotwin_stats.json
+  action_normalization: quantile
+  raw_action_dim: 14                             # dual-arm: 6 joints + 1 gripper per arm
+  action_chunk_size: 64                          # = training chunk_length
+  # Subsampled video, matching the recipe's dataset.video_subsample_factor=4:
+  # 7.5 Hz video against 30 Hz actions -> 64/4 + 1 = 17 observation frames, and the
+  # server sets model.config.tokenizer.encode_exact_durations=[17] to match.
+  # MUST equal what the checkpoint trained with. Serving a factor-4 checkpoint
+  # with factor 1 does not error -- it sends 65 frames instead of 17 and quietly
+  # scores far lower. A dense checkpoint needs this set back to 1.
+  video_subsample_factor: 4
+  # Concat-view height sent to the policy. COUPLED to the sim camera type: with
+  # Large_D435 (640x480) the composite is 720x640, and 720 means "no pre-resize",
+  # so the pipeline does the single 720->640x640 resize training did. A smaller
+  # value squeezes the image through a bottleneck and back up.
+  # If the sim ever renders D435 (320x240) again, this must drop to 360.
+  image_size: 720
+  fps: 30                                        # = training fps
+  camera_layout: robotwin_concat                 # head on top, left|right wrists below
+  format_prompt_as_json: true                    # training wraps the task string in the action JSON prompt
+
+  # --- sampling (RoboTwin reference: no CFG) ---------------------------------
+  guidance: 1.0
+  num_steps: 30
+  seed: 0
+
+  # --- batching --------------------------------------------------------------
+  # Keep max_batch_size at 1: with use_state, `predict_policy_batch` ignores the
+  # `state` field — only the single-observation path prepends it. Raising this
+  # silently drops proprioceptive conditioning.
+  max_batch_size: 1
+  max_wait_time: 0.05

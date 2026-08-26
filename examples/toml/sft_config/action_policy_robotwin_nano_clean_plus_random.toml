@@ -1,0 +1,80 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: OpenMDW-1.1
+
+# ============================================================================
+# RoboTwin 2.0 action-policy SFT — WHOLE SCENE (all 27,500 episodes)
+#
+# Reproduces the reference run: 14-D absolute dual-arm joint_pos policy on the
+# full RoboTwin 2.0 LeRobot dataset (3 cams -> concat_view, 7.5 Hz subsampled
+# video against 30 Hz actions, ColorJitter image augmentation, quantile-
+# normalized actions with state conditioning).
+# HSDP 8x4, global batch 2048, lr 5e-5, 25000 iters.
+#
+# The remaining recipe knobs (grad_clip, action-head skip-on-load, dataset
+# knobs, video_subsample_factor=4 and the matching encode_exact_durations=[17])
+# live in the registered experiment; this file pins the run-level scalars that
+# define the reference reproduction.
+#
+# Env required:
+#   ROBOTWIN_ROOT=/path/to/robotwin LeRobot v3.0 root
+#   BASE_CHECKPOINT_PATH=<Cosmos3-Nano DCP dir>
+#   WAN_VAE_PATH=<Wan2.2_VAE.pth>
+#   IMAGINAIRE_OUTPUT_ROOT=/path/to/output_root
+# ============================================================================
+
+[job]
+task         = "vfm"
+experiment   = "action_policy_robotwin_nano"
+project      = "cosmos3"
+group        = "action_sft"
+name         = "action_policy_robotwin_nano_clean_plus_random"
+wandb_mode   = "online"
+
+[model]
+precision = "bfloat16"
+
+[model.parallelism]
+data_parallel_shard_degree     = 4    # FSDP within a node (4 GPUs)
+data_parallel_replicate_degree = 8    # HSDP 8x4 = 32 ranks (reference: 8 nodes x 4)
+
+[model.activation_checkpointing]
+mode           = "full"
+save_ops_regex = ["fmha"]
+
+[model.tokenizer]
+vae_path = "${oc.env:WAN_VAE_PATH}"
+
+[optimizer]
+lr = 5.0e-05   # scaled for global batch 2048
+
+[scheduler]
+warm_up_steps = [500]      # lr ramps f_start -> f_max over the first 500 iters
+cycle_lengths = [25000]    # decay spans the full run
+f_start       = [1.0e-06]
+f_max         = [1.0]
+f_min         = [0.1]      # floor at 10% of lr rather than annealing to 0
+
+[dataloader_train]
+# Subsampled video (factor 4 -> 17 observation frames) keeps the same vision
+# token budget as the previous vsub2 recipe; max_samples_per_batch=64 unchanged.
+max_samples_per_batch = 64
+
+[trainer]
+max_iter        = 25000
+logging_iter    = 50
+grad_accum_iter = 1       # global batch = max_samples 64 x (shard 4 x replicate 8) x 1 = 2048
+
+[trainer.callbacks.compile_tokenizer]
+enabled            = true
+warmup_resolutions = ["480"]
+
+[checkpoint]
+load_path = "${oc.env:BASE_CHECKPOINT_PATH}"
+save_iter = 1000
+
+# The 32-rank HSDP 8x4 shape (global batch 2048) is the reference. To fit
+# fewer GPUs while keeping global batch 2048, lower data_parallel_replicate_degree
+# and raise grad_accum_iter at launch — e.g. one 8-GPU node (shard 8 x replicate 1):
+#   --opts model.parallelism.data_parallel_shard_degree=8 \
+#          model.parallelism.data_parallel_replicate_degree=1 \
+#          trainer.grad_accum_iter=4

@@ -1,0 +1,73 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: OpenMDW-1.1
+
+# ============================================================================
+# RoboTwin 2.0 action-policy SFT — CLEAN SUBSET (~2,500 non-randomized episodes)
+#
+# Trains on the 50 non-randomized ("clean") episodes of each task block only
+# (episode_index % 550 < 50), injecting that filter via the launch script's
+# TAIL_OVERRIDES. All other recipe knobs (augmentation, chunk, vsub, state
+# conditioning) are the same as the whole-scene recipe.
+#
+# WHY 2 NODES — the load-bearing knob, not a resource convenience. Clean is
+# ~9% of the data (2,500 / 27,500), so the 8-node GBS 2048 shape would run
+# ~63 epochs over 390k windows in 25k iters and overfit. 2 nodes give
+# GBS 512 x 10k iters = 5.12M samples ~= 13 epochs over clean, matching the
+# reference clean run's sample budget.
+#
+# HSDP 4x2 = 8 GPUs, global batch 512, lr 5e-5, 10000 iters.
+#
+# Env required:
+#   ROBOTWIN_ROOT=/path/to/robotwin LeRobot v3.0 root
+#   BASE_CHECKPOINT_PATH=<Cosmos3-Nano DCP dir>
+#   WAN_VAE_PATH=<Wan2.2_VAE.pth>
+#   IMAGINAIRE_OUTPUT_ROOT=/path/to/output_root
+# ============================================================================
+
+[job]
+task         = "vfm"
+experiment   = "action_policy_robotwin_nano"
+project      = "cosmos3"
+group        = "action_sft"
+name         = "action_policy_robotwin_nano_clean"
+wandb_mode   = "online"
+
+[model]
+precision = "bfloat16"
+
+[model.parallelism]
+data_parallel_shard_degree     = 4    # FSDP within a node (4 GPUs)
+data_parallel_replicate_degree = 2    # HSDP 4x2 = 8 GPUs (2 nodes x 4)
+
+[model.activation_checkpointing]
+mode           = "full"
+save_ops_regex = ["fmha"]
+
+[model.tokenizer]
+vae_path = "${oc.env:WAN_VAE_PATH}"
+
+[optimizer]
+lr = 5.0e-05   # not rescaled for the smaller batch; use 2.5e-5 if the first 500 iters are unstable
+
+[scheduler]
+warm_up_steps = [500]
+cycle_lengths = [10000]
+f_start       = [1.0e-06]
+f_max         = [1.0]
+f_min         = [0.1]
+
+[dataloader_train]
+max_samples_per_batch = 64
+
+[trainer]
+max_iter        = 10000
+logging_iter    = 50
+grad_accum_iter = 1       # global batch = max_samples 64 x (shard 4 x replicate 2) x 1 = 512
+
+[trainer.callbacks.compile_tokenizer]
+enabled            = true
+warmup_resolutions = ["480"]
+
+[checkpoint]
+load_path = "${oc.env:BASE_CHECKPOINT_PATH}"
+save_iter = 500   # more frequent: 10k iters x 500 = 20 checkpoints, keep granularity for overfit diagnosis

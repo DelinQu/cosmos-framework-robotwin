@@ -22,6 +22,7 @@ from torch.utils.data import Dataset, IterableDataset, get_worker_info
 from cosmos_framework.data.generator.action.datasets.droid_merged_lerobot_dataset import DROIDMergedLeRobotDataset
 from cosmos_framework.data.generator.action.datasets.droid_lerobot_dataset import DROIDLeRobotDataset
 from cosmos_framework.data.generator.action.datasets.libero_lerobot_dataset import LIBEROLeRobotDataset
+from cosmos_framework.data.generator.action.datasets.robotwin_lerobot_dataset import RoboTwinLeRobotDataset
 from cosmos_framework.data.generator.action.utils.transforms import ActionTransformPipeline
 
 
@@ -265,6 +266,86 @@ def get_action_libero_sft_dataset(
         pose_coordinate_frame=pose_coordinate_frame,
         action_normalization=action_normalization,
         action_stats_path=action_stats_path,
+    )
+    transform = ActionTransformPipeline(
+        tokenizer_config=tokenizer_config,
+        cfg_dropout_rate=cfg_dropout_rate,
+        max_action_dim=max_action_dim,
+        append_viewpoint_info=append_viewpoint_info,
+        append_duration_fps_timestamps=append_duration_fps_timestamps,
+        append_resolution_info=append_resolution_info,
+        append_idle_frames=append_idle_frames,
+        format_prompt_as_json=format_prompt_as_json,
+    )
+    sft = ActionSFTDataset(dataset, transform, resolution)
+    if iterable_shuffle:
+        return ActionIterableShuffleDataset(sft, seed=episode_shuffle_seed)
+    return sft
+
+
+def get_action_robotwin_sft_dataset(
+    *,
+    root: str,
+    fps: float = 30.0,
+    chunk_length: int = 64,
+    mode: str = "wam",
+    use_state: bool = False,
+    use_image_augmentation: bool = False,
+    action_normalization: str | None = None,
+    viewpoint: str = "concat_view",
+    resolution: str | int = "480",
+    max_action_dim: int = 64,
+    tokenizer_config: dict | None = None,
+    cfg_dropout_rate: float = 0.1,
+    append_viewpoint_info: bool = True,
+    append_duration_fps_timestamps: bool = True,
+    append_resolution_info: bool = True,
+    append_idle_frames: bool = False,
+    format_prompt_as_json: bool = True,
+    iterable_shuffle: bool = False,
+    episode_shuffle_seed: int = 42,
+    split: str = "train",
+    val_ratio: float = 0.01,
+    seed: int = 0,
+    video_subsample_factor: int = 4,
+    robotwin_scene: str = "all",
+) -> Dataset:
+    """Build the RoboTwin 2.0 (dual-arm ALOHA) action-policy SFT dataset.
+
+    Feeds ``RoboTwinLeRobotDataset`` (14D absolute ``joint_pos``, concat_view of
+    cam_high + left/right wrist cameras) through ``ActionTransformPipeline``.
+    ``root`` is a LOCAL LeRobot v3.0 dir; the loader reads parquet + video
+    directly at native fps. Mirrors ``get_action_droid_sft_dataset`` (joint_pos +
+    concat_view), but reads a single 14-D action feature so it takes no
+    action_space / filter kwargs.
+
+    ``append_idle_frames`` defaults to False: RoboTwin actions are absolute, so
+    the base skips idle detection (it only supports ``backward_framewise``) and
+    there would be no value to append.
+
+    ``video_subsample_factor`` > 1 trains on subsampled video (the reference
+    recipe: factor 4 = 7.5 Hz video against 30 Hz actions, 64/4 + 1 = 17
+    observation frames). It must be paired with
+    ``tokenizer.encode_exact_durations = [chunk_length // factor + 1]``, and the
+    inference server must be told the same factor.
+
+    ``robotwin_scene`` restricts to "all" / "clean" / "random" episodes (see
+    ``RoboTwinLeRobotDataset._filter_valid_episodes`` for the positional logic).
+    """
+    dataset: Dataset = RoboTwinLeRobotDataset(
+        root=root,
+        fps=fps,
+        chunk_length=chunk_length,
+        mode=mode,
+        use_state=use_state,  # opt-in proprio: prepends t=0 state as action row 0 (DROID contract)
+        use_image_augmentation=use_image_augmentation,
+        action_normalization=action_normalization,
+        viewpoint=viewpoint,
+        split=split,
+        split_val_ratio=val_ratio,
+        split_seed=seed,
+        video_subsample_factor=video_subsample_factor,
+        robotwin_scene=robotwin_scene,
     )
     transform = ActionTransformPipeline(
         tokenizer_config=tokenizer_config,

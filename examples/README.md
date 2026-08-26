@@ -19,3 +19,4 @@ This directory contains:
 | Reasoner Alignment SFT (Cosmos3-Nano)        | `launch_sft_videophy2_nano.sh`        |
 | Reasoner Alignment SFT (Cosmos3-Super)       | `launch_sft_videophy2_super.sh`       |
 | Reasoner Alignment SFT (Cosmos3-Edge)        | `launch_sft_videophy2_edge.sh`        |
+| RoboTwin 2.0 action policy (Cosmos3-Nano)     | `launch_sft_action_policy_robotwin_nano.sh` |

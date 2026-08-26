@@ -26,6 +26,21 @@ DEFAULT_VIEWPOINT_TEMPLATES: dict[str, str] = {
     "video_game_view": "This video is captured from an in-game camera perspective in a virtual environment.",
 }
 
+# Per-domain sentence appended after the viewpoint template, naming which
+# sub-image is which camera. Training reads this via the dataset's
+# ``additional_view_description`` extra; inference must send the SAME string, or
+# the model loses the mapping from tile position to arm -- a silent divergence
+# that surfaces only as poor left/right placement accuracy, never as an error.
+# Keyed by domain so both sides import one definition instead of duplicating the
+# literal (datasets whose server has no counterpart still inline theirs).
+ADDITIONAL_VIEW_DESCRIPTIONS: dict[str, str] = {
+    "robotwin": (
+        "The top row is a third-person overhead camera. The bottom row contains two "
+        "horizontally concatenated wrist-mounted camera views: the left half is the "
+        "left arm's wrist camera and the right half is the right arm's wrist camera."
+    ),
+}
+
 
 class ViewpointTextInfo(Augmentor):
     """Augmentor that appends viewpoint type description to captions.

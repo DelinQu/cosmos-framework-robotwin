@@ -1,0 +1,19 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: OpenMDW-1.1
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "vla-eval-cosmos3"
+version = "0.1.0"
+description = "vla-evaluation-harness model server that serves Cosmos3 action policies"
+requires-python = ">=3.10"
+# vla-eval is the eval harness (external), like transformers-cosmos3 -> transformers.
+# cosmos_framework is provided by the host venv this installs into (repo core).
+dependencies = ["vla-eval>=0.4", "numpy>=1.24", "pillow>=9.4"]
+
+[tool.hatch.build.targets.wheel]
+# ship the module + the config as package data
+include = ["vla_eval_cosmos3/**", "configs/**"]

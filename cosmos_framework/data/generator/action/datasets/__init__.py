@@ -20,6 +20,7 @@ from cosmos_framework.data.generator.action.datasets.human_hand_pose_lerobot_dat
 from cosmos_framework.data.generator.action.datasets.libero_lerobot_dataset import LIBEROLeRobotDataset
 from cosmos_framework.data.generator.action.datasets.robomind_franka_dataset import RoboMINDFrankaDataset
 from cosmos_framework.data.generator.action.datasets.robomind_ur_dataset import RoboMINDURDataset
+from cosmos_framework.data.generator.action.datasets.robotwin_lerobot_dataset import RoboTwinLeRobotDataset
 from cosmos_framework.data.generator.action.datasets.umi_lerobot_dataset import UMILeRobotDataset
 
 __all__ = [
@@ -33,5 +34,6 @@ __all__ = [
     "LIBEROLeRobotDataset",
     "RoboMINDFrankaDataset",
     "RoboMINDURDataset",
+    "RoboTwinLeRobotDataset",
     "UMILeRobotDataset",
 ]
